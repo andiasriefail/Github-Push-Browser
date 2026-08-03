@@ -1,0 +1,15 @@
+# Cloudflare Pages only — Vercel pakai vercel.json
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  X-DNS-Prefetch-Control: on
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https://avatars.githubusercontent.com https://raw.githubusercontent.com data: blob:; connect-src 'self' https://api.github.com https://github.com https://raw.githubusercontent.com; worker-src blob:; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+
+/api/*
+  Cache-Control: no-store
