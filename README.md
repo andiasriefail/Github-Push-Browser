@@ -2,7 +2,7 @@
 
 Upload files to GitHub directly from your browser — no terminal, no installation required.
 
-🔗 **Demo:** https://gitpush-browser.vercel.app/
+🔗 **Demo:** https://githubpush-havers.vercel.app/
 
 ---
 
