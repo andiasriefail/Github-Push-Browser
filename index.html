@@ -591,7 +591,7 @@
   }
   .img-result-row .ir-name{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
   .img-result-row .ir-url{
-    font-size:10.5px; color:var(--text-dimmer); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-size:10.5px; color:var(--text-dimmer); white-space:normal; overflow-wrap:anywhere;
     max-width:200px;
   }
   .btn-copy-url{
@@ -670,7 +670,7 @@
   .pr-row + .pr-row{ border-top:1px solid var(--border); }
   .pr-num{ color:var(--text-dimmer); font-size:11px; flex-shrink:0; padding-top:1px; }
   .pr-info{ flex:1; min-width:0; }
-  .pr-title{ font-size:12.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pr-title{ font-size:12.5px; color:var(--text); white-space:normal; overflow-wrap:anywhere; }
   .pr-meta{ font-size:10.5px; color:var(--text-dimmer); margin-top:2px; }
   .pr-state{
     flex-shrink:0; font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700;
@@ -687,6 +687,18 @@
   }
   .log-act:hover{ color:#7AA2F7; border-color:#7AA2F7; background:rgba(122,162,247,0.08); }
   .log-act.copied{ color:var(--green-bright); border-color:var(--green); background:rgba(57,211,83,0.08); }
+
+  /* --- Label panjang: turun baris, jangan terpotong --- */
+  .fitem{ align-items:flex-start; }
+  .fitem .fname, .tree-row .tpath, .log-file, .browser-row .bname, .editor-head .epath, .img-result-row .ir-name{
+    white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; word-break:break-word; min-width:0;
+  }
+  .tree-row{ align-items:flex-start; }
+  .log-meta{ overflow-wrap:anywhere; white-space:normal; }
+  .pdir{ color:var(--text-dimmer); }
+  .pbase{ color:var(--text); font-weight:600; }
+  .tree-row.skipped .pbase{ color:var(--text-dimmer); }
+  .ferr{ display:block; color:var(--red); font-size:10.5px; margin-top:2px; }
 </style>
 </head>
 <body>
@@ -743,11 +755,11 @@
 
         <div id="patPane">
           <div class="field">
-            <label>GitHub PAT (scope: repo)</label>
+            <label>GitHub PAT (scope: repo + workflow)</label>
             <input type="password" id="patInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off">
             <div class="field-hint">
-              Belum punya token? <a href="https://github.com/settings/tokens/new?scopes=repo&description=gitpush" target="_blank" rel="noopener">Buat token baru di GitHub →</a>
-              Pilih scope <b style="color:var(--text-dim)">repo</b> saja, dan set masa berlaku pendek (7 hari) kalau cuma untuk coba-coba.
+              Belum punya token? <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=gitpush" target="_blank" rel="noopener">Buat token baru di GitHub →</a>
+              Pilih scope <b style="color:var(--text-dim)">repo</b> dan <b style="color:var(--text-dim)">workflow</b> (workflow wajib untuk upload .github/workflows), dan set masa berlaku pendek (7 hari) kalau cuma untuk coba-coba.
             </div>
           </div>
           <button class="btn" id="connectBtn">→ Hubungkan &amp; verifikasi token</button>
@@ -808,11 +820,6 @@
               border-radius:5px; padding:4px 10px; border:1px solid var(--border-bright);
               background:var(--bg-panel); color:var(--text-dim); transition:all .15s;
             ">ubah visibility</button>
-            <button id="repoDeleteBtn" title="Hapus repository ini secara permanen" style="
-              flex:0 0 auto; font-family:var(--mono); font-size:11px; cursor:pointer;
-              border-radius:5px; padding:4px 10px; border:1px solid var(--red);
-              background:var(--bg-panel); color:var(--red); transition:all .15s;
-            ">🗑 hapus repo</button>
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:var(--mono); font-size:11px;">
             <span id="repoLangBadge" style="display:none; padding:2px 8px; border-radius:4px; background:var(--bg-panel); border:1px solid var(--border-bright); color:var(--text-dim);"></span>
@@ -1023,12 +1030,16 @@
           <div class="drop-txt">Tarik file ke sini, atau ketuk untuk memilih</div>
           <div class="drop-sub">Bisa lebih dari satu file · .zip otomatis diekstrak, struktur foldernya dipertahankan</div>
         </div>
-        <input type="file" id="fileInput" multiple>
+        <input type="file" id="fileInput" multiple style="display:none">
+        <input type="file" id="folderInput" webkitdirectory multiple style="display:none">
+        <div style="margin:-2px 0 10px;"><button type="button" id="folderPickBtn" class="btn btn-ghost" style="width:auto; padding:7px 12px; font-size:12px;">📁 Pilih folder</button></div>
 
         <label class="check-row">
           <input type="checkbox" id="gitignoreToggle" checked>
-          Lewati file umum yang biasanya diabaikan (node_modules, .git, .env, .DS_Store, dist/build)
+          Lewati file umum dari folder/zip (node_modules, .git/, .env, .DS_Store, dist/, build/, vendor/)
         </label>
+
+        <div class="field-hint" style="margin:-4px 0 8px;">Folder &amp; file berawalan titik (<b>.github</b>, <b>.gitignore</b>) ikut terupload. Yang di-skip otomatis diberi badge <b>skip ✕</b> — klik badge itu untuk tetap mengupload (mis. .env).</div>
 
         <div id="zipTreeWrap" class="hidden">
           <div class="field-hint" style="margin-bottom:6px;">Centang file yang mau diupload:</div>
@@ -1088,29 +1099,6 @@
   </div>
 </div>
 
-<!-- Delete Repo Modal -->
-<div class="modal-backdrop" id="deleteRepoModal">
-  <div class="modal">
-    <div class="modal-title" style="color:var(--red);">🗑 Hapus Repository</div>
-    <div class="note" style="border-color:var(--red); background:rgba(248,81,73,0.08); margin-bottom:14px;">
-      <span class="ic">⚠️</span>
-      <div>Aksi ini <b style="color:var(--red);">permanen dan tidak bisa dibatalkan</b>. Semua file, commit, issue, dan pull request di repo <b id="deleteRepoName" style="color:var(--text);"></b> akan hilang selamanya dari GitHub.</div>
-    </div>
-    <div class="field">
-      <label>Ketik <span id="deleteRepoConfirmName" style="color:var(--red);"></span> untuk konfirmasi</label>
-      <input type="text" id="deleteRepoInput" placeholder="ketik nama repo persis" autocomplete="off">
-      <div class="field-hint">
-        Dapat error izin? Token PAT butuh scope tambahan <b style="color:var(--text-dim)">delete_repo</b> (terpisah dari scope <b style="color:var(--text-dim)">repo</b> biasa).
-        <a href="https://github.com/settings/tokens/new?scopes=repo,delete_repo&description=gitpush-delete" target="_blank" rel="noopener">Buat token dengan izin hapus →</a>
-        lalu "Putuskan" &amp; login ulang pakai token baru itu.
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn" id="deleteRepoConfirmBtn" style="flex:1; background:var(--red); color:#fff;" disabled>Hapus repo ini selamanya</button>
-      <button class="btn btn-ghost" id="deleteRepoCancelBtn" style="flex:0 0 auto; width:auto; padding:12px 16px;">Batal</button>
-    </div>
-  </div>
-</div>
 
 <!-- Quick Issue Modal -->
 <div class="modal-backdrop" id="quickIssueModal">
@@ -1291,7 +1279,6 @@
   const quickReadmeBtn    = document.getElementById('quickReadmeBtn');
   const quickGitignoreBtn = document.getElementById('quickGitignoreBtn');
   const repoVisToggleBtn  = document.getElementById('repoVisToggleBtn');
-  const repoDeleteBtn     = document.getElementById('repoDeleteBtn');
   const imgDropZone       = document.getElementById('imgDropZone');
   const imgFileInput = document.getElementById('imgFileInput');
   const imgResultList = document.getElementById('imgResultList');
@@ -1324,12 +1311,6 @@
       updateTargetPathHint();
     }
   });
-  const deleteRepoModal        = document.getElementById('deleteRepoModal');
-  const deleteRepoName         = document.getElementById('deleteRepoName');
-  const deleteRepoConfirmName  = document.getElementById('deleteRepoConfirmName');
-  const deleteRepoInput        = document.getElementById('deleteRepoInput');
-  const deleteRepoConfirmBtn   = document.getElementById('deleteRepoConfirmBtn');
-  const deleteRepoCancelBtn    = document.getElementById('deleteRepoCancelBtn');
   const quickIssueBtn    = document.getElementById('quickIssueBtn');
   const quickIssueModal  = document.getElementById('quickIssueModal');
   const issueTitleInput  = document.getElementById('issueTitleInput');
@@ -1400,7 +1381,7 @@
         return `<div class="pr-row" data-url="${pr.html_url}">
           <span class="pr-num">#${pr.number}</span>
           <div class="pr-info">
-            <div class="pr-title">${pr.title}</div>
+            <div class="pr-title" title="${esc(pr.title)}">${esc(pr.title)}</div>
             <div class="pr-meta">${pr.user.login} · ${date} · ${pr.head.label} → ${pr.base.label}</div>
           </div>
           <span class="pr-state ${state}">${state}</span>
@@ -1636,7 +1617,7 @@
         const date = new Date(run.updated_at).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' });
         return `<div class="browser-row" data-url="${run.html_url}" style="cursor:pointer;">
           <span style="flex:0 0 auto;">${info.icon}</span>
-          <span class="bname" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${run.name || run.display_title || 'workflow'}</span>
+          <span class="bname" style="flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere;" title="${esc(run.name || run.display_title || 'workflow')}">${esc(run.name || run.display_title || 'workflow')}</span>
           <span style="font-family:var(--mono); font-size:10.5px; color:${info.color}; flex:0 0 auto; margin-right:6px;">${info.label}</span>
           <span style="font-family:var(--mono); font-size:10.5px; color:var(--text-dimmer); flex:0 0 auto;">${run.head_branch} · ${date}</span>
         </div>`;
@@ -2267,10 +2248,10 @@
       if(!Array.isArray(commits) || !commits.length){ boxNow.textContent = ''; return; }
       const rows = commits.map(c => {
         const dateStr = new Date(c.commit.author.date).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' });
-        const msg = (c.commit.message.split('\n')[0] || '').slice(0, 60);
-        return `<div style="display:flex; gap:6px; padding:2px 0; overflow:hidden;">
+        const msg = (c.commit.message.split('\n')[0] || '');
+        return `<div style="display:flex; gap:6px; padding:2px 0; align-items:flex-start;">
           <a href="${c.html_url}" target="_blank" rel="noopener" style="color:var(--text-dimmer); text-decoration:none; flex:0 0 auto;">⎇${c.sha.slice(0,7)}</a>
-          <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-dim);">${msg}</span>
+          <span style="flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; color:var(--text-dim);" title="${esc(msg)}">${esc(msg)}</span>
           <span style="flex:0 0 auto; color:var(--text-dimmer);">${dateStr}</span>
         </div>`;
       }).join('');
@@ -2918,94 +2899,6 @@
     }
   });
 
-  // ---------------- Delete repo ----------------
-  // GitHub butuh scope token terpisah ("delete_repo") dari scope "repo" biasa
-  // yang dipakai fitur lain di app ini. Kalau token cuma punya scope "repo",
-  // DELETE /repos/{owner}/{repo} akan ditolak (biasanya 403), jadi errornya
-  // ditangani khusus di bawah supaya user tahu apa yang harus dilakukan,
-  // bukan cuma lihat pesan generik.
-  repoDeleteBtn.addEventListener('click', () => {
-    if(!_currentRepoMeta) return;
-    deleteRepoName.textContent = _currentRepoMeta.full_name;
-    deleteRepoConfirmName.textContent = _currentRepoMeta.name;
-    deleteRepoInput.value = '';
-    deleteRepoConfirmBtn.disabled = true;
-    deleteRepoModal.classList.add('show');
-    setTimeout(() => deleteRepoInput.focus(), 80);
-  });
-
-  deleteRepoCancelBtn.addEventListener('click', () => {
-    deleteRepoModal.classList.remove('show');
-  });
-  deleteRepoModal.addEventListener('click', (e) => {
-    if(e.target === deleteRepoModal) deleteRepoModal.classList.remove('show');
-  });
-
-  // Tombol hapus cuma aktif kalau nama yang diketik PERSIS sama dengan nama repo
-  // (case-sensitive, tanpa "owner/") — pola standar GitHub sendiri buat cegah
-  // salah klik pada aksi yang permanen dan tidak bisa dibatalkan.
-  deleteRepoInput.addEventListener('input', () => {
-    if(!_currentRepoMeta) return;
-    deleteRepoConfirmBtn.disabled = deleteRepoInput.value !== _currentRepoMeta.name;
-  });
-  deleteRepoInput.addEventListener('keydown', (e) => {
-    if(e.key === 'Enter' && !deleteRepoConfirmBtn.disabled) deleteRepoConfirmBtn.click();
-  });
-
-  deleteRepoConfirmBtn.addEventListener('click', async () => {
-    if(!_currentRepoMeta || deleteRepoInput.value !== _currentRepoMeta.name) return;
-    const fullName = _currentRepoMeta.full_name;
-    const [owner, repo] = fullName.split('/');
-    deleteRepoConfirmBtn.disabled = true;
-    deleteRepoConfirmBtn.textContent = 'Menghapus…';
-    try{
-      const res = await ghFetch(`https://api.github.com/repos/${owner}/${repo}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      // Sukses = 204 No Content, tidak ada body JSON buat dibaca.
-      if(!res.ok){
-        let msg = 'Gagal menghapus repo (' + res.status + ')';
-        if(res.status === 403 || res.status === 404){
-          msg = 'Token kamu belum punya izin "delete_repo". Buat token baru dengan scope tambahan "delete_repo" dulu, lalu login ulang.';
-        }else{
-          const d = await res.json().catch(()=>({}));
-          if(d.message) msg = d.message;
-        }
-        throw new Error(msg);
-      }
-
-      deleteRepoModal.classList.remove('show');
-      toast(`✓ Repo "${fullName}" berhasil dihapus`);
-
-      // Reset total semua state yang nempel ke repo yang baru dihapus,
-      // supaya UI nggak nyisain data basi (browser file, branch, PR, editor
-      // yang lagi kebuka, dsb) dari repo yang sudah nggak ada.
-      _currentRepoMeta = null;
-      closeEditor();
-      selectedFiles = [];
-      renderFileList();
-      zipTreeWrap.classList.add('hidden');
-      updateRepoInfoBar(null);
-      prSection.style.display = 'none';
-      updateDlBar();
-
-      // Auto-refresh daftar repo dari GitHub (bukan cuma buang <option> yang
-      // lama dari dropdown) — supaya listing repo benar-benar sinkron sama
-      // kondisi GitHub yang sebenarnya, dan repo yang terhapus betul-betul
-      // hilang dari tampilan, bukan masih nyantol karena dropdown nggak
-      // pernah diminta re-fetch.
-      await loadRepos();
-    }catch(err){
-      toast(err.message, true);
-      deleteRepoConfirmBtn.textContent = 'Hapus repo ini selamanya';
-      // _currentRepoMeta bisa saja sudah di-null-kan di atas kalau delete-nya
-      // sendiri sukses tapi loadRepos() sesudahnya yang gagal (network error
-      // pas refresh) — jangan akses .name kalau sudah null.
-      deleteRepoConfirmBtn.disabled = !_currentRepoMeta || deleteRepoInput.value !== _currentRepoMeta.name;
-    }
-  });
-
   // ---------------- Quick issue ----------------
   quickIssueBtn.addEventListener('click', () => {
     if(!isRepoSelected()){ toast('Harap pilih repo terlebih dahulu', true); return; }
@@ -3371,7 +3264,7 @@
     crypto.getRandomValues(stateArr);
     const state = Array.from(stateArr).map(b => b.toString(16).padStart(2,'0')).join('');
     sessionStorage.setItem('gitpush_oauth_state', state);
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&scope=repo&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&scope=repo%20workflow&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
     window.location.href = authUrl;
   });
 
@@ -3456,26 +3349,103 @@
   })();
 
   // ---------------- File selection ----------------
+  // ---------------- Helpers: escape + path rendering ----------------
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  // Rapikan path: backslash -> "/", buang "./" di awal, "//" ganda, dan "/" di ujung.
+  // Titik di awal nama (.github, .env) SENGAJA dibiarkan utuh.
+  function normRel(p){
+    return String(p).replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/{2,}/g, '/').replace(/^\/+|\/+$/g, '');
+  }
+  // Path penuh ditampilkan utuh (boleh turun baris), folder redup + nama file terang,
+  // supaya kelihatan jelas file mana yang dimaksud walau path-nya panjang.
+  function pathHTML(p){
+    const i = p.lastIndexOf('/');
+    if(i < 0) return `<span class="pbase">${esc(p)}</span>`;
+    return `<span class="pdir">${esc(p.slice(0, i + 1))}</span><span class="pbase">${esc(p.slice(i + 1))}</span>`;
+  }
+
+  // ---------------- File selection ----------------
+  const folderInput = document.getElementById('folderInput');
+  const folderPickBtn = document.getElementById('folderPickBtn');
+
   dropZone.addEventListener('click', () => fileInput.click());
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
   dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('drag');
-    addFiles(e.dataTransfer.files);
-  });
-  fileInput.addEventListener('change', () => addFiles(fileInput.files));
-
-  // selectedFiles items: { file: File, relPath: string, fromZip: bool, skip: bool }
-
-  async function addFiles(fileListObj){
-    const incoming = Array.from(fileListObj);
-    for(const f of incoming){
-      if(f.name.toLowerCase().endsWith('.zip')){
-        await extractZip(f);
-      }else{
-        selectedFiles.push({ file: f, relPath: f.name, fromZip: false, skip: isIgnored(f.name) });
+    // PENTING: webkitGetAsEntry() harus dipanggil SINKRON di dalam event drop,
+    // setelah ada "await" daftar item sudah dikosongkan browser.
+    const dt = e.dataTransfer;
+    const entries = [];
+    if(dt.items){
+      for(const it of dt.items){
+        if(it.kind === 'file' && it.webkitGetAsEntry){
+          const en = it.webkitGetAsEntry();
+          if(en) entries.push(en);
+        }
       }
+    }
+    handleDropped(entries, Array.from(dt.files));
+  });
+  fileInput.addEventListener('change', () => {
+    const list = Array.from(fileInput.files).map(f => ({ file: f, relPath: f.name }));
+    fileInput.value = '';
+    addItems(list);
+  });
+  folderPickBtn.addEventListener('click', e => { e.stopPropagation(); folderInput.click(); });
+  folderInput.addEventListener('change', () => {
+    const list = Array.from(folderInput.files).map(f => ({ file: f, relPath: f.webkitRelativePath || f.name, fromFolder: true }));
+    folderInput.value = '';
+    addItems(list);
+  });
+
+  // Telusuri folder hasil drag & drop secara rekursif (termasuk .github, .env, dll).
+  async function walkEntry(entry, prefix, out){
+    if(entry.isFile){
+      const file = await new Promise((res, rej) => entry.file(res, rej));
+      out.push({ file, relPath: prefix + entry.name, fromFolder: prefix !== '' });
+    }else if(entry.isDirectory){
+      const reader = entry.createReader();
+      let batch;
+      do{
+        // readEntries mengembalikan maksimal ~100 item per panggilan, ulangi sampai kosong
+        batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        for(const child of batch) await walkEntry(child, prefix + entry.name + '/', out);
+      }while(batch.length);
+    }
+  }
+
+  async function handleDropped(entries, plainFiles){
+    try{
+      let list = [];
+      if(entries.length){
+        for(const en of entries) await walkEntry(en, '', list);
+      }else{
+        list = plainFiles.map(f => ({ file: f, relPath: f.name }));
+      }
+      await addItems(list);
+    }catch(err){
+      toast('Gagal membaca folder: ' + err.message, true);
+    }
+  }
+
+  // selectedFiles items: { file, relPath, fromZip, fromFolder, skip, error }
+  // Filter "file umum" hanya otomatis untuk isi zip/folder. File yang dipilih
+  // satu per satu TIDAK di-skip diam-diam (jadi .env / .gitignore yang sengaja
+  // dipilih tetap masuk).
+  async function addItems(list){
+    for(const it of list){
+      if(it.file.name.toLowerCase().endsWith('.zip') && !it.fromFolder){
+        await extractZip(it.file);
+        continue;
+      }
+      const rel = normRel(it.relPath);
+      if(!rel) continue;
+      const auto = !!it.fromFolder;
+      selectedFiles.push({ file: it.file, relPath: rel, fromZip: false, fromFolder: auto, skip: auto && isIgnored(rel), error: null });
     }
     renderFileList();
     renderZipTree();
@@ -3484,18 +3454,21 @@
   async function extractZip(zipFile){
     const statusRow = document.createElement('div');
     statusRow.className = 'zip-status';
-    statusRow.innerHTML = `<span class="pulse"></span> Mengekstrak ${zipFile.name}…`;
+    statusRow.innerHTML = `<span class="pulse"></span> Mengekstrak ${esc(zipFile.name)}…`;
     fileList.appendChild(statusRow);
     try{
       const zip = await JSZip.loadAsync(zipFile);
       const entries = Object.values(zip.files).filter(e => !e.dir);
       let count = 0;
       for(const entry of entries){
-        if(entry.name.includes('__MACOSX/') || entry.name.split('/').pop().startsWith('.DS_Store')) continue;
+        const rel = normRel(entry.name);
+        if(!rel) continue;
+        const base = rel.split('/').pop();
+        // Hanya buang sampah metadata macOS; dotfile biasa (.github, .env, .gitignore) tetap dibaca.
+        if(rel.includes('__MACOSX/') || base === '.DS_Store' || base.startsWith('._')) continue;
         const blob = await entry.async('blob');
-        const name = entry.name.split('/').pop();
-        const asFile = new File([blob], name, { type: blob.type || 'application/octet-stream' });
-        selectedFiles.push({ file: asFile, relPath: entry.name, fromZip: true, skip: isIgnored(entry.name) });
+        const asFile = new File([blob], base, { type: blob.type || 'application/octet-stream' });
+        selectedFiles.push({ file: asFile, relPath: rel, fromZip: true, fromFolder: false, skip: isIgnored(rel), error: null });
         count++;
       }
       toast(`${zipFile.name}: ${count} file diekstrak`);
@@ -3515,16 +3488,27 @@
   function renderFileList(){
     if(!selectedFiles.length){ fileList.innerHTML = ''; return; }
     fileList.innerHTML = selectedFiles.map((item,i) => `
-      <div class="fitem" draggable="true" data-i="${i}">
+      <div class="fitem" draggable="true" data-i="${i}" title="${esc(item.relPath)}">
         <span class="fdrag" title="Geser untuk reorder">⠿</span>
         ${item.fromZip ? '<span class="fbadge">zip</span>' : ''}
-        ${item.skip ? '<span class="fbadge" style="color:var(--red); background:rgba(248,81,73,0.12);">skip</span>' : ''}
-        <span class="fname" id="fname-${i}">${item.relPath}</span>
+        ${item.fromFolder ? '<span class="fbadge">folder</span>' : ''}
+        ${item.skip ? `<span class="fbadge fskip" data-i="${i}" title="Di-skip otomatis (file umum). Klik untuk tetap diupload" style="color:var(--red); background:rgba(248,81,73,0.12); cursor:pointer;">skip ✕</span>` : ''}
+        ${item.error ? '<span class="fbadge" style="color:var(--red); background:rgba(248,81,73,0.12);">gagal</span>' : ''}
+        <span class="fname" id="fname-${i}">${pathHTML(item.relPath)}${item.error ? `<span class="ferr">${esc(item.error)}</span>` : ''}</span>
         <span class="fsize">${fmtSize(item.file.size)}</span>
         <span class="fedit" data-i="${i}" title="Rename sebelum push">✎</span>
         <span class="frm" data-i="${i}">✕</span>
       </div>
     `).join('');
+
+    // Klik badge "skip" = tetap upload file ini
+    fileList.querySelectorAll('.fskip').forEach(el => {
+      el.addEventListener('click', () => {
+        selectedFiles[+el.dataset.i].skip = false;
+        renderFileList();
+        renderZipTree();
+      });
+    });
 
     // Remove buttons
     fileList.querySelectorAll('.frm').forEach(el => {
@@ -3542,14 +3526,15 @@
         const nameSpan = document.getElementById('fname-' + i);
         if(!nameSpan) return;
         const current = selectedFiles[i].relPath;
-        nameSpan.outerHTML = `<input class="fname-edit" id="fname-edit-${i}" value="${current}" data-i="${i}">`;
+        nameSpan.outerHTML = `<input class="fname-edit" id="fname-edit-${i}" value="${esc(current)}" data-i="${i}">`;
         const inp = document.getElementById('fname-edit-' + i);
         inp.focus();
         inp.select();
         const commit = () => {
-          const val = inp.value.trim();
+          const val = normRel(inp.value.trim());
           if(val) selectedFiles[i].relPath = val;
           renderFileList();
+          renderZipTree();
         };
         inp.addEventListener('blur', commit);
         inp.addEventListener('keydown', e => {
@@ -3590,21 +3575,21 @@
 
   // Re-evaluate skip flags whenever the "lewati file umum" toggle changes
   gitignoreToggle.addEventListener('change', () => {
-    selectedFiles.forEach(item => item.skip = isIgnored(item.relPath));
+    selectedFiles.forEach(item => { item.skip = (item.fromZip || item.fromFolder) && isIgnored(item.relPath); });
     renderFileList();
     renderZipTree();
   });
 
   function renderZipTree(){
-    const zipItems = selectedFiles.filter(f => f.fromZip);
-    if(!zipItems.length){ zipTreeWrap.classList.add('hidden'); return; }
+    const treeItems = selectedFiles.filter(f => f.fromZip || f.fromFolder);
+    if(!treeItems.length){ zipTreeWrap.classList.add('hidden'); return; }
     zipTreeWrap.classList.remove('hidden');
     zipTree.innerHTML = selectedFiles.map((item, i) => {
-      if(!item.fromZip) return '';
+      if(!(item.fromZip || item.fromFolder)) return '';
       return `
-        <div class="tree-row ${item.skip ? 'skipped' : ''}">
+        <div class="tree-row ${item.skip ? 'skipped' : ''}" title="${esc(item.relPath)}">
           <input type="checkbox" data-i="${i}" ${item.skip ? '' : 'checked'}>
-          <span class="tpath">${item.relPath}</span>
+          <span class="tpath">${pathHTML(item.relPath)}</span>
           <span class="tbadge">${fmtSize(item.file.size)}</span>
         </div>
       `;
@@ -3637,7 +3622,7 @@
       <div class="hist-row">
         <span class="log-icon ${h.ok ? 'ok' : 'err'}">${h.ok ? '✓' : '✕'}</span>
         <div class="log-main">
-          <div class="log-file">${h.path}</div>
+          <div class="log-file" title="${esc(h.path)}">${pathHTML(h.path)}</div>
           <div class="hist-meta">${h.repo} · ${h.branch} · ${new Date(h.at).toLocaleString('id-ID')}</div>
         </div>
       </div>
@@ -3650,6 +3635,27 @@
   }
 
   // ---------------- Upload logic ----------------
+  //
+  // Alur (pakai Git Data API, bukan 1 PUT per file):
+  //   1. Cek branch + ambil tree lama (file yang isinya sudah sama di-skip, hemat kuota)
+  //   2. Upload tiap file sebagai blob — PARALEL maks 5, "lazy load balance":
+  //      5 worker, tiap worker yang kosong langsung menarik file berikutnya
+  //      (file terbesar didahulukan) jadi tidak ada worker yang menganggur.
+  //   3. Semua blob digabung jadi SATU commit (atomik, tidak ada bentrok sha / 409 antar file)
+  //   4. Verifikasi: tree commit dibaca ulang dan dicocokkan dengan sha tiap file
+  //   Kenapa bukan PUT /contents paralel: PUT ke branch yang sama secara bersamaan
+  //   bentrok (409/422 "sha"), dan GitHub menyarankan menghindari request tulis
+  //   bersamaan. Blob tidak terikat branch jadi aman diparalelkan.
+  //
+  // Retry berlapis:
+  //   a) per request: exponential backoff + jitter, timeout (AbortController)
+  //   b) rate limit (403/429, retry-after / x-ratelimit-reset): SEMUA worker ikut menunggu
+  //   c) integritas: sha1 lokal dibandingkan dengan sha balikan GitHub, beda -> upload ulang
+  //   d) putaran ulang file gagal dengan concurrency diturunkan 5 -> 3 -> 1
+  //   e) commit/ref bentrok (ada yang push di sela) -> ambil HEAD baru, bangun ulang commit
+  //   f) verifikasi akhir; file yang tidak terverifikasi ditandai gagal
+  //   g) file gagal tetap ada di daftar, tinggal klik Push lagi
+
   function fileToBase64(file){
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -3657,6 +3663,129 @@
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  }
+
+  const UPLOAD_CONCURRENCY = 5;
+  const MAX_FILE_BYTES = 100 * 1024 * 1024;
+  const WORKFLOW_RE = /^\.github\/workflows\//i;
+  const WORKFLOW_MSG = 'Token tidak punya izin "workflow", jadi GitHub menolak file di .github/workflows/. Buat token baru dengan scope repo + workflow (fine-grained: Contents & Workflows = Read and write), lalu login ulang.';
+  const JSON_HDR = { 'Content-Type': 'application/json' };
+  let _uploading = false;
+  let _rateGate = 0; // semua request menunggu sampai waktu ini kalau kena rate limit
+
+  class GhError extends Error{
+    constructor(msg, status, extra){
+      super(msg);
+      this.status = status;
+      if(extra) Object.assign(this, extra);
+    }
+  }
+
+  function backoffMs(attempt){
+    return Math.min(1000 * Math.pow(2, attempt - 1), 15000) + Math.random() * 500;
+  }
+
+  async function ghRetry(url, opts, cfg){
+    const tries = (cfg && cfg.tries) || 6;
+    const timeoutMs = (cfg && cfg.timeoutMs) || 60000;
+    const onRetry = cfg && cfg.onRetry;
+    let lastErr;
+    for(let a = 1; a <= tries; a++){
+      const gap = _rateGate - Date.now();
+      if(gap > 0) await sleep(gap);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try{
+        const res = await ghFetch(url, { ...(opts || {}), signal: ctrl.signal });
+        if(res.ok){ clearTimeout(timer); return res; }
+        const body = await res.clone().json().catch(() => ({}));
+        clearTimeout(timer);
+        const msg = body.message || ('HTTP ' + res.status);
+        const retryAfter = parseInt(res.headers.get('retry-after') || '', 10);
+        const remaining = res.headers.get('x-ratelimit-remaining');
+        const reset = parseInt(res.headers.get('x-ratelimit-reset') || '', 10);
+        const isRate = res.status === 429 ||
+          (res.status === 403 && (!isNaN(retryAfter) || remaining === '0' || /rate limit|abuse/i.test(msg)));
+        const transient = isRate || res.status >= 500 || res.status === 408;
+        if(!transient) throw new GhError(msg, res.status, { permanent: true });
+        let wait;
+        if(isRate){
+          wait = !isNaN(retryAfter) ? retryAfter * 1000
+               : (remaining === '0' && reset ? Math.max(0, reset * 1000 - Date.now()) + 1000 : 60000);
+          wait = Math.min(wait, 120000);
+          _rateGate = Math.max(_rateGate, Date.now() + wait);
+        }else{
+          wait = backoffMs(a);
+        }
+        lastErr = new GhError(msg, res.status);
+        if(a === tries) throw lastErr;
+        if(onRetry) onRetry(a, tries, wait, msg);
+        await sleep(wait);
+      }catch(err){
+        clearTimeout(timer);
+        if(err instanceof GhError) throw err;
+        // Network error / "Failed to fetch" / timeout
+        lastErr = new GhError(err.name === 'AbortError' ? 'timeout (koneksi terlalu lama)' : 'koneksi gagal (Failed to fetch)', 0);
+        if(a === tries) throw lastErr;
+        const wait = backoffMs(a);
+        if(onRetry) onRetry(a, tries, wait, lastErr.message);
+        await sleep(wait);
+      }
+    }
+    throw lastErr;
+  }
+
+  function bufToBase64(buf){
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CH = 0x8000;
+    for(let i = 0; i < bytes.length; i += CH){
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return btoa(bin);
+  }
+
+  // SHA-1 ala git: sha1("blob <ukuran>\0" + isi). Dipakai untuk cek integritas upload
+  // dan untuk melewati file yang sudah sama persis di GitHub.
+  async function gitBlobSha(buf){
+    if(!(window.crypto && crypto.subtle) || buf.byteLength > 40 * 1024 * 1024) return null;
+    const head = new TextEncoder().encode('blob ' + buf.byteLength + '\0');
+    const all = new Uint8Array(head.length + buf.byteLength);
+    all.set(head, 0);
+    all.set(new Uint8Array(buf), head.length);
+    const d = await crypto.subtle.digest('SHA-1', all);
+    return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function getTokenScopes(){
+    try{
+      const r = await ghFetch('https://api.github.com/user');
+      const h = r.headers.get('x-oauth-scopes');
+      return h === null ? null : h.split(',').map(s => s.trim()).filter(Boolean);
+    }catch{ return null; }
+  }
+
+  // Worker pool: tiap worker menarik job berikutnya begitu selesai (lazy load balance).
+  async function runPool(jobs, limit, worker){
+    let next = 0;
+    const runners = Array.from({ length: Math.min(limit, jobs.length) }, async () => {
+      while(true){
+        const i = next++;
+        if(i >= jobs.length) return;
+        await worker(jobs[i]);
+      }
+    });
+    await Promise.all(runners);
+  }
+
+  // History ditulis sekali di akhir (read-modify-write paralel akan saling menimpa)
+  async function pushHistoryBatch(entries){
+    if(!entries.length) return;
+    const list = (await idbGet('gitpush_history')) || [];
+    const at = new Date().toISOString();
+    const add = entries.map(e => ({ ...e, at }));
+    await idbSet('gitpush_history', add.reverse().concat(list).slice(0, 100));
+    renderHistory();
   }
 
   function addLogRow(status, filename, meta){
@@ -3668,8 +3797,8 @@
     row.innerHTML = `
       <span class="log-icon ${status}">${iconMap[status]}</span>
       <div class="log-main">
-        <div class="log-file">${filename}</div>
-        <div class="log-meta">${meta}</div>
+        <div class="log-file" title="${esc(filename)}">${pathHTML(filename)}</div>
+        <div class="log-meta">${esc(meta)}</div>
         <div class="progress-bar"><div class="progress-fill"></div></div>
       </div>
     `;
@@ -3677,7 +3806,29 @@
     return row;
   }
 
+  function setJob(job, text, pct, state){
+    if(text != null) job.metaEl.textContent = text;
+    if(pct != null) job.fill.style.width = pct + '%';
+    if(state === 'err'){
+      job.fill.style.background = 'var(--red)';
+      job.iconEl.className = 'log-icon err'; job.iconEl.textContent = '✕';
+    }else if(state === 'ok'){
+      job.fill.style.background = '';
+      job.iconEl.className = 'log-icon ok'; job.iconEl.textContent = '✓';
+    }else{
+      job.fill.style.background = state === 'warn' ? 'var(--amber)' : '';
+      job.iconEl.className = 'log-icon pending'; job.iconEl.textContent = '◌';
+    }
+  }
+
+  function failJob(job, message){
+    job.status = 'failed';
+    job.error = message;
+    setJob(job, message, 100, 'err');
+  }
+
   uploadBtn.addEventListener('click', async () => {
+    if(_uploading) return;
     if(!isRepoSelected()){
       toast('Harap pilih repo terlebih dahulu', true); return;
     }
@@ -3686,61 +3837,256 @@
     const repoFull = repoSelect.value;
     const branch = branchSelect.value || repoSelect.selectedOptions[0]?.dataset.branch || 'main';
     const [owner, repo] = repoFull.split('/');
-    // Kalau kolom "target path" dikosongkan, default ke folder yang lagi
-    // dibuka di file browser (_currentBrowsePath) — bukan langsung root.
-    // Kalau user memang isi target path secara manual, itu tetap dipakai
-    // apa adanya (mereka mungkin memang mau upload ke folder lain).
+    const repoBase = `https://api.github.com/repos/${owner}/${repo}`;
+    // Kolom "target path" kosong -> ikut folder yang lagi dibuka di file browser.
     const typedPath = targetPath.value.trim().replace(/^\/+|\/+$/g, '');
     const folder = typedPath || _currentBrowsePath;
     const msg = commitMsg.value.trim() || 'Upload via gitpush';
+    const skippedCount = selectedFiles.length - activeFiles.length;
 
+    _uploading = true;
     uploadBtn.disabled = true;
-    let done = 0;
+    const setBtn = t => { uploadBtn.textContent = t; };
+    setBtn('Menyiapkan…');
 
+    // ---- Susun job (1 job per file) ----
+    const jobs = [];
+    const byPath = new Map();
     for(const item of activeFiles){
-      const file = item.file;
-      const path = folder ? `${folder}/${item.relPath}` : item.relPath;
-      const row = addLogRow('pending', path, 'membaca file…');
-      const fill = row.querySelector('.progress-fill');
-      fill.style.width = '15%';
-      uploadBtn.textContent = `Mengupload ${done+1}/${activeFiles.length}…`;
-      try{
-        const content = await fileToBase64(file);
-        fill.style.width = '45%';
-        row.querySelector('.log-meta').textContent = 'mengecek versi lama…';
+      const rel = normRel(item.relPath);
+      if(!rel) continue;
+      const path = folder ? `${folder}/${rel}` : rel;
+      const row = addLogRow('pending', path, 'antre…');
+      const job = {
+        item, path, status: 'pending', error: null, blobSha: null, existed: null,
+        row, fill: row.querySelector('.progress-fill'),
+        metaEl: row.querySelector('.log-meta'), iconEl: row.querySelector('.log-icon')
+      };
+      if(byPath.has(path)){
+        // path ganda: yang terakhir menang
+        const old = byPath.get(path);
+        old.status = 'dup';
+        setJob(old, 'path ganda — dipakai file yang terakhir', 100, 'err');
+        jobs.splice(jobs.indexOf(old), 1);
+      }
+      byPath.set(path, job);
+      jobs.push(job);
+    }
 
-        let sha = undefined;
-        const getRes = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodePath(path)}?ref=${branch}`);
-        if(getRes.ok){
-          const existing = await getRes.json();
-          sha = existing.sha;
+    try{
+      // ---- Pra-cek: ukuran & scope workflow ----
+      const scopes = await getTokenScopes();
+      const lacksWorkflow = Array.isArray(scopes) && !scopes.includes('workflow');
+      for(const job of jobs){
+        if(job.item.file.size > MAX_FILE_BYTES){
+          failJob(job, `Ukuran ${fmtSize(job.item.file.size)} melebihi batas 100 MB GitHub`);
+        }else if(lacksWorkflow && WORKFLOW_RE.test(job.path)){
+          failJob(job, WORKFLOW_MSG);
         }
-        fill.style.width = '70%';
-        row.querySelector('.log-meta').textContent = 'mengupload…';
+      }
+      let live = jobs.filter(j => j.status === 'pending');
 
-        const putRes = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodePath(path)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: msg,
-            content: content,
-            branch: branch,
-            ...(sha ? { sha } : {})
-          })
+      // ---- Branch / HEAD ----
+      async function getHead(){
+        let res;
+        try{
+          res = await ghRetry(`${repoBase}/git/ref/heads/${encodePath(branch)}`, {});
+        }catch(e){
+          if(e.status === 409) return { empty: true };
+          if(e.status === 404) throw new GhError(`Branch "${branch}" tidak ditemukan`, 404);
+          throw e;
+        }
+        const ref = await res.json();
+        const sha = ref.object.sha;
+        const cRes = await ghRetry(`${repoBase}/git/commits/${sha}`, {});
+        const c = await cRes.json();
+        return { sha, treeSha: c.tree.sha };
+      }
+
+      let head = live.length ? await getHead() : null;
+
+      // Repo kosong: Git Data API menolak (409). Docs GitHub: inisialisasi dulu lewat PUT /contents.
+      if(head && head.empty){
+        const first = live.find(j => !WORKFLOW_RE.test(j.path));
+        if(!first) throw new Error('Repo masih kosong dan semua file adalah workflow. Upload 1 file biasa dulu.');
+        setJob(first, 'membuat commit pertama (repo kosong)…', 50);
+        const buf = await first.item.file.arrayBuffer();
+        await ghRetry(`${repoBase}/contents/${encodePath(first.path)}`, {
+          method: 'PUT', headers: JSON_HDR,
+          body: JSON.stringify({ message: msg, content: bufToBase64(buf), branch })
+        }, { onRetry: (a, n, w, m) => setJob(first, `retry ${a}/${n} · ${m}`, 50, 'warn') });
+        first.status = 'committed';
+        first.note = 'dibuat';
+        live = live.filter(j => j !== first);
+        head = live.length ? await getHead() : null;
+      }
+
+      // ---- Tree lama (untuk skip file yang sama persis) ----
+      let existing = null;
+      if(head && !head.empty && live.length){
+        try{
+          const r = await ghRetry(`${repoBase}/git/trees/${head.treeSha}?recursive=1`, {});
+          const t = await r.json();
+          existing = new Map(t.tree.filter(x => x.type === 'blob').map(x => [x.path, x.sha]));
+          if(t.truncated) existing._truncated = true;
+        }catch{ existing = null; }
+      }
+
+      // ---- Tahap 1: upload blob paralel ----
+      let finished = 0;
+      const total = live.length;
+      const bump = () => { finished++; setBtn(`Mengupload ${Math.min(finished, total)}/${total}…`); };
+      setBtn(`Mengupload 0/${total}…`);
+
+      async function processJob(job){
+        setJob(job, 'membaca file…', 10);
+        const buf = await job.item.file.arrayBuffer();
+        const localSha = await gitBlobSha(buf);
+        if(localSha && existing && existing.get(job.path) === localSha){
+          job.blobSha = localSha;
+          job.status = 'unchanged';
+          setJob(job, 'tidak berubah (sudah sama di GitHub)', 100, 'ok');
+          return;
+        }
+        job.existed = existing && !existing._truncated ? existing.has(job.path) : null;
+        const content = bufToBase64(buf);
+        const timeoutMs = Math.min(600000, 60000 + Math.ceil(buf.byteLength / (50 * 1024)) * 1000);
+        for(let k = 1; k <= 3; k++){
+          setJob(job, k > 1 ? `upload ulang (cek integritas ${k}/3)…` : 'mengupload…', 45);
+          const res = await ghRetry(`${repoBase}/git/blobs`, {
+            method: 'POST', headers: JSON_HDR,
+            body: JSON.stringify({ content, encoding: 'base64' })
+          }, {
+            timeoutMs,
+            onRetry: (a, n, w, m) => setJob(job, `retry ${a}/${n} dalam ${Math.ceil(w / 1000)} dtk · ${m}`, 45, 'warn')
+          });
+          const data = await res.json();
+          if(!localSha || data.sha === localSha){
+            job.blobSha = data.sha;
+            job.status = 'uploaded';
+            setJob(job, 'terupload, menunggu commit…', 80);
+            return;
+          }
+        }
+        throw new Error('SHA tidak cocok setelah 3x upload (data rusak di jalan)');
+      }
+
+      let pending = live.slice().sort((a, b) => b.item.file.size - a.item.file.size); // terbesar dulu
+      const limits = [UPLOAD_CONCURRENCY, 3, 1];
+      for(let round = 0; round < limits.length && pending.length; round++){
+        if(round > 0){
+          setBtn(`Mengulang ${pending.length} file gagal (putaran ${round + 1}/${limits.length})…`);
+          await sleep(2500 * round);
+        }
+        const failedNow = [];
+        await runPool(pending, limits[round], async job => {
+          try{
+            await processJob(job);
+            bump();
+          }catch(err){
+            const final = round === limits.length - 1 || err.permanent;
+            job.lastErr = err;
+            if(final){ failJob(job, err.message); bump(); }
+            else{ setJob(job, `gagal: ${err.message} — akan diulang`, 100, 'warn'); failedNow.push(job); }
+          }
         });
+        pending = failedNow;
+      }
+      pending.forEach(j => { if(j.status === 'pending') failJob(j, j.lastErr ? j.lastErr.message : 'gagal'); });
 
-        if(!putRes.ok){
-          const errBody = await putRes.json().catch(() => ({}));
-          throw new Error(errBody.message || ('Gagal (' + putRes.status + ')'));
+      // ---- Tahap 2: satu commit untuk semua blob ----
+      let toCommit = jobs.filter(j => j.status === 'uploaded');
+
+      async function commitAll(list){
+        let lastErr;
+        for(let attempt = 1; attempt <= 4; attempt++){
+          const h = await getHead();
+          if(h.empty) throw new Error('Repo kosong, tidak bisa membuat commit');
+          let tree = h.treeSha;
+          for(let i = 0; i < list.length; i += 100){
+            const chunk = list.slice(i, i + 100).map(e => ({ path: e.path, mode: '100644', type: 'blob', sha: e.blobSha }));
+            const r = await ghRetry(`${repoBase}/git/trees`, {
+              method: 'POST', headers: JSON_HDR, body: JSON.stringify({ base_tree: tree, tree: chunk })
+            });
+            tree = (await r.json()).sha;
+          }
+          const cr = await ghRetry(`${repoBase}/git/commits`, {
+            method: 'POST', headers: JSON_HDR, body: JSON.stringify({ message: msg, tree, parents: [h.sha] })
+          });
+          const commit = await cr.json();
+          try{
+            await ghRetry(`${repoBase}/git/refs/heads/${encodePath(branch)}`, {
+              method: 'PATCH', headers: JSON_HDR, body: JSON.stringify({ sha: commit.sha, force: false })
+            });
+            return { commitSha: commit.sha, treeSha: commit.tree.sha };
+          }catch(err){
+            // Ada push lain di sela-sela (bukan fast-forward) -> ambil HEAD baru & bangun ulang commit
+            if((err.status === 422 || err.status === 409) && !/workflow/i.test(err.message) && attempt < 4){
+              lastErr = err;
+              setBtn(`Branch berubah, mengulang commit (${attempt}/3)…`);
+              await sleep(1000 * attempt);
+              continue;
+            }
+            throw err;
+          }
         }
-        const result = await putRes.json();
-        fill.style.width = '100%';
-        row.querySelector('.log-icon').className = 'log-icon ok';
-        row.querySelector('.log-icon').textContent = '✓';
-        const rawUploadUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
-        const blobUploadUrl = result.content.html_url;
-        row.querySelector('.log-meta').innerHTML = `${sha ? 'diperbarui' : 'dibuat'} · <a class="log-link" href="${blobUploadUrl}" target="_blank" rel="noopener">lihat →</a><span class="log-actions"><span class="log-act" data-url="${rawUploadUrl}">copy raw URL</span><span class="log-act" data-url="${blobUploadUrl}">copy blob URL</span></span>`;
-        row.querySelectorAll('.log-act').forEach(act => {
+        throw lastErr;
+      }
+
+      let commitInfo = null;
+      if(toCommit.length){
+        setBtn(`Membuat commit (${toCommit.length} file)…`);
+        try{
+          commitInfo = await commitAll(toCommit);
+        }catch(err){
+          const wf = toCommit.filter(j => WORKFLOW_RE.test(j.path));
+          const looksWorkflow = /workflow/i.test(err.message) || err.status === 404 || err.status === 403;
+          if(wf.length && looksWorkflow){
+            // Coba lagi TANPA file workflow supaya file lain tetap masuk
+            const rest = toCommit.filter(j => !WORKFLOW_RE.test(j.path));
+            try{
+              commitInfo = rest.length ? await commitAll(rest) : null;
+              wf.forEach(j => failJob(j, `${WORKFLOW_MSG} (GitHub: ${err.message})`));
+              toCommit = rest;
+            }catch(err2){
+              toCommit.forEach(j => failJob(j, 'Commit gagal: ' + err2.message));
+              toCommit = [];
+            }
+          }else{
+            toCommit.forEach(j => failJob(j, 'Commit gagal: ' + err.message));
+            toCommit = [];
+          }
+        }
+      }
+
+      // ---- Tahap 3: verifikasi isi commit di GitHub ----
+      if(commitInfo && toCommit.length){
+        setBtn('Memverifikasi…');
+        let verified = false;
+        try{
+          const r = await ghRetry(`${repoBase}/git/trees/${commitInfo.treeSha}?recursive=1`, {});
+          const t = await r.json();
+          if(!t.truncated){
+            const m = new Map(t.tree.map(x => [x.path, x.sha]));
+            for(const j of toCommit){
+              if(m.get(j.path) === j.blobSha) j.status = 'committed';
+              else failJob(j, 'Tidak terverifikasi di GitHub setelah commit (path/sha berbeda)');
+            }
+            verified = true;
+          }
+        }catch{}
+        if(!verified) toCommit.forEach(j => { j.status = 'committed'; });
+      }
+
+      // ---- Tampilkan hasil per file ----
+      for(const job of jobs){
+        if(job.status !== 'committed') continue;
+        setJob(job, null, 100, 'ok');
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${encodePath(branch)}/${encodePath(job.path)}`;
+        const blobUrl = `https://github.com/${owner}/${repo}/blob/${encodePath(branch)}/${encodePath(job.path)}`;
+        const label = job.note || (job.existed === true ? 'diperbarui' : job.existed === false ? 'dibuat' : 'terkirim');
+        job.metaEl.innerHTML = `${label} · terverifikasi · <a class="log-link" href="${esc(blobUrl)}" target="_blank" rel="noopener">lihat →</a><span class="log-actions"><span class="log-act" data-url="${esc(rawUrl)}">copy raw URL</span><span class="log-act" data-url="${esc(blobUrl)}">copy blob URL</span></span>`;
+        job.metaEl.querySelectorAll('.log-act').forEach(act => {
           act.addEventListener('click', async () => {
             try{
               await navigator.clipboard.writeText(act.dataset.url);
@@ -3750,29 +4096,42 @@
             }catch{ toast('Gagal copy', true); }
           });
         });
-        markFileTreeStale();
-        await pushHistory({ path, repo: repoFull, branch, ok: true });
-      }catch(err){
-        fill.style.width = '100%';
-        fill.style.background = 'var(--red)';
-        row.querySelector('.log-icon').className = 'log-icon err';
-        row.querySelector('.log-icon').textContent = '✕';
-        row.querySelector('.log-meta').textContent = err.message;
-        await pushHistory({ path, repo: repoFull, branch, ok: false });
       }
-      done++;
-    }
 
-    uploadBtn.disabled = false;
-    uploadBtn.textContent = '↑ Push ke GitHub';
-    const skippedCount = selectedFiles.length - activeFiles.length;
-    selectedFiles = [];
-    renderFileList();
-    zipTreeWrap.classList.add('hidden');
-    toast(`Selesai${skippedCount ? ` (${skippedCount} file di-skip)` : ''}`);
-    // Refresh browser repo agar file baru langsung muncul
-    if(repoFull && !repoFull.includes('Memuat')){
-      browsePath(repoFull, folder || '');
+      const okCount = jobs.filter(j => j.status === 'committed').length;
+      const sameCount = jobs.filter(j => j.status === 'unchanged').length;
+      const failedJobs = jobs.filter(j => j.status === 'failed');
+      if(okCount) markFileTreeStale();
+      await pushHistoryBatch(jobs.filter(j => j.status !== 'dup').map(j => ({
+        path: j.path, repo: repoFull, branch, ok: j.status === 'committed' || j.status === 'unchanged'
+      })));
+
+      // File gagal tetap di daftar (dengan alasannya) supaya tinggal klik Push lagi
+      failedJobs.forEach(j => { j.item.error = j.error; j.item.skip = false; });
+      selectedFiles = failedJobs.map(j => j.item);
+      renderFileList();
+      renderZipTree();
+
+      let summary = `✓ ${okCount} terkirim`;
+      if(sameCount) summary += `, ${sameCount} tidak berubah`;
+      if(skippedCount) summary += `, ${skippedCount} di-skip`;
+      if(failedJobs.length) summary += ` · ✕ ${failedJobs.length} gagal (masih di daftar, klik Push untuk ulangi)`;
+      toast(summary, failedJobs.length > 0);
+
+      if(repoFull && !repoFull.includes('Memuat')){
+        browsePath(repoFull, folder || '');
+      }
+    }catch(err){
+      jobs.forEach(j => { if(j.status === 'pending' || j.status === 'uploaded') failJob(j, err.message); });
+      jobs.filter(j => j.status === 'failed').forEach(j => { j.item.error = j.error; });
+      selectedFiles = jobs.filter(j => j.status === 'failed').map(j => j.item);
+      renderFileList();
+      renderZipTree();
+      toast('Upload dihentikan: ' + err.message, true);
+    }finally{
+      _uploading = false;
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = '↑ Push ke GitHub';
     }
   });
 
