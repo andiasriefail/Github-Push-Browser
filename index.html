@@ -708,6 +708,27 @@
   .lo-title{ font-size:13px; color:var(--text); font-weight:600; margin-bottom:10px; overflow-wrap:anywhere; }
   .lo-path{ font-size:11.5px; color:var(--text-dim); min-height:16px; overflow-wrap:anywhere; word-break:break-word; max-height:90px; overflow:hidden; }
   .lo-count{ font-size:11px; color:var(--green-bright); margin-top:8px; }
+  /* --- Ukuran file / commit --- */
+  .fsize-over{ color:var(--red) !important; font-weight:700; }
+  .fsize-warn{ color:var(--amber) !important; font-weight:700; }
+  .fwarn{ display:block; color:var(--amber); font-size:10.5px; margin-top:2px; }
+  .commit-summary{ font-family:var(--mono); font-size:11.5px; color:var(--text-dim); background:var(--bg-raised); border:1px solid var(--border-bright); border-radius:8px; padding:10px 12px; margin:10px 0; line-height:1.6; overflow-wrap:anywhere; }
+  .commit-summary b{ color:var(--text); }
+  .commit-summary .cs-over{ color:var(--red); margin-top:4px; }
+  .commit-summary .cs-warn{ color:var(--amber); margin-top:4px; }
+  .commit-summary .cs-list{ margin:4px 0 0 10px; font-size:10.5px; }
+  /* --- Riwayat gagal --- */
+  .fail-row{ border-top:1px solid var(--border); font-family:var(--mono); font-size:11.5px; }
+  .fail-row:first-child{ border-top:none; }
+  .fail-head{ display:flex; align-items:flex-start; gap:10px; padding:9px 10px; cursor:pointer; }
+  .fail-err{ color:var(--red); font-size:11px; margin-top:3px; overflow-wrap:anywhere; }
+  .fail-toggle{ color:var(--text-dimmer); font-size:10px; margin-top:3px; }
+  .fail-detail{ padding:0 10px 10px; }
+  .fail-pre{ background:#010409; border:1px solid var(--border); border-radius:6px; padding:8px; margin:0 0 6px; font-size:10.5px; line-height:1.5; color:var(--text-dim); white-space:pre-wrap; overflow-wrap:anywhere; max-height:320px; overflow:auto; }
+  .fail-actions{ display:flex; justify-content:flex-end; gap:14px; padding:6px 10px; font-family:var(--mono); font-size:11px; color:var(--text-dimmer); }
+  .fail-actions span{ cursor:pointer; }
+  .fail-actions span:hover{ color:var(--green-bright); }
+  .fail-actions #failClear:hover{ color:var(--red); }
 </style>
 </head>
 <body>
@@ -1056,6 +1077,7 @@
         </div>
 
         <div class="filelist" id="fileList"></div>
+        <div class="commit-summary" id="commitSummary" style="display:none;"></div>
 
         <div class="field">
           <label>Folder tujuan (opsional)</label>
@@ -1078,6 +1100,11 @@
         <div class="sec-label">riwayat tersimpan <span style="font-weight:400; text-transform:none; letter-spacing:0;">(semua sesi)</span></div>
         <div class="log" id="historyLog">
           <div class="log-empty">Belum ada riwayat tersimpan.</div>
+        </div>
+
+        <div class="sec-label">riwayat gagal terkirim <span style="font-weight:400; text-transform:none; letter-spacing:0;">(dengan log konsol)</span></div>
+        <div class="log" id="failLog">
+          <div class="log-empty">Belum ada kegagalan tercatat.</div>
         </div>
 
       </div>
@@ -3367,6 +3394,13 @@
   })();
 
   // ---------------- File selection ----------------
+  // ---------------- Batas ukuran file GitHub ----------------
+  // Dokumen GitHub: peringatan di atas 50 MiB, diblokir di atas 100 MiB
+  // (batas 25 MiB hanya untuk upload lewat web GitHub, bukan API yang dipakai app ini).
+  const SIZE_WARN_BYTES = 50 * 1024 * 1024;
+  const SIZE_MAX_BYTES = 100 * 1024 * 1024;
+  function sizeClass(b){ return b > SIZE_MAX_BYTES ? 'fsize-over' : (b >= SIZE_WARN_BYTES ? 'fsize-warn' : ''); }
+
   // ---------------- Helpers: escape + path rendering ----------------
   function esc(s){
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -3573,6 +3607,44 @@
   }
 
   function renderFileList(){
+    renderFileListInner();
+    renderCommitSummary();
+  }
+
+  function sizeNote(item){
+    const b = item.file.size;
+    if(b > SIZE_MAX_BYTES) return `<span class="ferr">⚠ ${fmtSize(b)} melebihi batas GitHub 100 MB — tidak akan terkirim (pakai Git LFS, atau hapus dari daftar)</span>`;
+    if(b >= SIZE_WARN_BYTES) return `<span class="fwarn">⚠ ${fmtSize(b)} di atas 50 MB — GitHub memberi peringatan, sebaiknya pakai Git LFS</span>`;
+    return '';
+  }
+
+  function renderCommitSummary(){
+    const el = document.getElementById('commitSummary');
+    if(!el) return;
+    if(!selectedFiles.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+    const act = selectedFiles.filter(f => !f.skip);
+    const over = act.filter(f => f.file.size > SIZE_MAX_BYTES);
+    const warn = act.filter(f => f.file.size >= SIZE_WARN_BYTES && f.file.size <= SIZE_MAX_BYTES);
+    const send = act.filter(f => f.file.size <= SIZE_MAX_BYTES);
+    const sum = a => a.reduce((n, f) => n + f.file.size, 0);
+    const skipped = selectedFiles.length - act.length;
+    let h = `Ukuran commit: <b>${fmtSize(sum(send))}</b> · <b>${send.length}</b> file akan dikirim`;
+    if(skipped) h += ` · ${skipped} di-skip (${fmtSize(sum(selectedFiles.filter(f => f.skip)))})`;
+    if(send.length){
+      const big = send.reduce((m, f) => f.file.size > m.file.size ? f : m, send[0]);
+      h += `<div>Terbesar: ${pathHTML(big.relPath)} (${fmtSize(big.file.size)})</div>`;
+    }
+    if(over.length){
+      h += `<div class="cs-over">✕ ${over.length} file melebihi 100 MB (${fmtSize(sum(over))}) — tidak akan terkirim:</div><div class="cs-list">`
+        + over.slice(0, 8).map(f => `<div>${pathHTML(f.relPath)} — <b style="color:var(--red)">${fmtSize(f.file.size)}</b></div>`).join('')
+        + (over.length > 8 ? `<div>…dan ${over.length - 8} lainnya</div>` : '') + '</div>';
+    }
+    if(warn.length) h += `<div class="cs-warn">⚠ ${warn.length} file di atas 50 MB (${fmtSize(sum(warn))}) — GitHub memberi peringatan</div>`;
+    el.innerHTML = h;
+    el.style.display = 'block';
+  }
+
+  function renderFileListInner(){
     if(!selectedFiles.length){ fileList.innerHTML = ''; return; }
     fileList.innerHTML = selectedFiles.map((item,i) => `
       <div class="fitem" draggable="true" data-i="${i}" title="${esc(item.relPath)}">
@@ -3581,8 +3653,8 @@
         ${item.fromFolder ? '<span class="fbadge">folder</span>' : ''}
         ${item.skip ? `<span class="fbadge fskip" data-i="${i}" title="Di-skip otomatis (file umum). Klik untuk tetap diupload" style="color:var(--red); background:rgba(248,81,73,0.12); cursor:pointer;">skip ✕</span>` : ''}
         ${item.error ? '<span class="fbadge" style="color:var(--red); background:rgba(248,81,73,0.12);">gagal</span>' : ''}
-        <span class="fname" id="fname-${i}">${pathHTML(item.relPath)}${item.error ? `<span class="ferr">${esc(item.error)}</span>` : ''}</span>
-        <span class="fsize">${fmtSize(item.file.size)}</span>
+        <span class="fname" id="fname-${i}">${pathHTML(item.relPath)}${item.error ? `<span class="ferr">${esc(item.error)}</span>` : sizeNote(item)}</span>
+        <span class="fsize ${sizeClass(item.file.size)}">${fmtSize(item.file.size)}</span>
         <span class="fedit" data-i="${i}" title="Rename sebelum push">✎</span>
         <span class="frm" data-i="${i}">✕</span>
       </div>
@@ -3677,7 +3749,7 @@
         <div class="tree-row ${item.skip ? 'skipped' : ''}" title="${esc(item.relPath)}">
           <input type="checkbox" data-i="${i}" ${item.skip ? '' : 'checked'}>
           <span class="tpath">${pathHTML(item.relPath)}</span>
-          <span class="tbadge">${fmtSize(item.file.size)}</span>
+          <span class="tbadge ${sizeClass(item.file.size)}">${fmtSize(item.file.size)}</span>
         </div>
       `;
     }).join('');
@@ -3753,12 +3825,14 @@
   }
 
   const UPLOAD_CONCURRENCY = 10;
-  const MAX_FILE_BYTES = 100 * 1024 * 1024;
   const WORKFLOW_RE = /^\.github\/workflows\//i;
   const WORKFLOW_MSG = 'Token tidak punya izin "workflow", jadi GitHub menolak file di .github/workflows/. Buat token baru dengan scope repo + workflow (fine-grained: Contents & Workflows = Read and write), lalu login ulang.';
   const JSON_HDR = { 'Content-Type': 'application/json' };
   let _uploading = false;
   let _rateGate = 0; // semua request menunggu sampai waktu ini kalau kena rate limit
+  let _runLog = null; // logger tingkat proses (dipakai ghRetry kalau tidak ada logger per-file)
+  const tsNow = () => new Date().toISOString().slice(11, 23);
+  const shortUrl = u => String(u).replace(/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+/, '');
 
   class GhError extends Error{
     constructor(msg, status, extra){
@@ -3777,6 +3851,7 @@
     const timeoutMs = (cfg && cfg.timeoutMs) || 60000;
     const onRetry = cfg && cfg.onRetry;
     let lastErr;
+    const logf = m => { const f = (cfg && cfg.log) || _runLog; if(f) f(`${(opts && opts.method) || 'GET'} ${shortUrl(url)} · ${m}`); };
     for(let a = 1; a <= tries; a++){
       const gap = _rateGate - Date.now();
       if(gap > 0) await sleep(gap);
@@ -3784,7 +3859,7 @@
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try{
         const res = await ghFetch(url, { ...(opts || {}), signal: ctrl.signal });
-        if(res.ok){ clearTimeout(timer); return res; }
+        if(res.ok){ clearTimeout(timer); if(a > 1) logf(`OK setelah ${a} percobaan`); return res; }
         const body = await res.clone().json().catch(() => ({}));
         clearTimeout(timer);
         const msg = body.message || ('HTTP ' + res.status);
@@ -3794,6 +3869,7 @@
         const isRate = res.status === 429 ||
           (res.status === 403 && (!isNaN(retryAfter) || remaining === '0' || /rate limit|abuse/i.test(msg)));
         const transient = isRate || res.status >= 500 || res.status === 408;
+        logf(`HTTP ${res.status} ${msg} [rate-remaining=${remaining === null ? '-' : remaining}, retry-after=${isNaN(retryAfter) ? '-' : retryAfter + 's'}, request-id=${res.headers.get('x-github-request-id') || '-'}] percobaan ${a}/${tries}${transient ? ' (akan diulang)' : ' (permanen, tidak diulang)'}`);
         if(!transient) throw new GhError(msg, res.status, { permanent: true });
         let wait;
         if(isRate){
@@ -3813,6 +3889,7 @@
         if(err instanceof GhError) throw err;
         // Network error / "Failed to fetch" / timeout
         lastErr = new GhError(err.name === 'AbortError' ? 'timeout (koneksi terlalu lama)' : 'koneksi gagal (Failed to fetch)', 0);
+        logf(`${err.name}: ${err.message} → ${lastErr.message} percobaan ${a}/${tries}`);
         if(a === tries) throw lastErr;
         const wait = backoffMs(a);
         if(onRetry) onRetry(a, tries, wait, lastErr.message);
@@ -3908,10 +3985,144 @@
     }
   }
 
-  function failJob(job, message){
+  function jlog(job, msg){
+    const line = tsNow() + ' ' + msg;
+    job.log.push(line);
+    if(job.log.length > 80) job.log.shift();
+    console.log('[gitpush]', job.path, '—', msg);
+  }
+
+  function failJob(job, message, stage, status){
     job.status = 'failed';
     job.error = message;
+    job.stage = stage || job.stage || 'upload';
+    if(status !== undefined) job.httpStatus = status;
+    jlog(job, `GAGAL [${job.stage}]: ${message}`);
+    console.error('[gitpush] GAGAL', job.path, job.stage, message);
     setJob(job, message, 100, 'err');
+  }
+
+  // ---------------- Riwayat gagal terkirim (tersimpan di IndexedDB) ----------------
+  const failLog = document.getElementById('failLog');
+  const STAGE_LABEL = { preflight: 'pra-cek', upload: 'upload blob', commit: 'commit', verifikasi: 'verifikasi', umum: 'umum' };
+  let _failCache = [];
+
+  function buildFailReport(h, run){
+    const L = [];
+    L.push(`[info] ${h.at}  ${h.repo}@${h.branch}`);
+    L.push(`[info] file=${h.path}  ukuran=${fmtSize(h.size)}  tahap=${h.stage}  http=${h.status === null || h.status === undefined ? '-' : h.status}`);
+    L.push(`[error] ${h.error}`);
+    L.push('--- log file ---');
+    (h.log || []).forEach(x => L.push(x));
+    if(run){
+      L.push('--- log proses ---');
+      (run.lines || []).forEach(x => L.push(x));
+      L.push('--- lingkungan ---');
+      (run.env || []).forEach(x => L.push(x));
+    }
+    return L.join('\n');
+  }
+
+  async function saveFailures(jobs, ctx){
+    try{
+      const failed = jobs.filter(j => j.status === 'failed');
+      if(!failed.length) return;
+      const batch = Date.now().toString(36);
+      const at = new Date().toISOString();
+      const list = (await idbGet('gitpush_failures')) || [];
+      const add = failed.map(j => ({
+        batch, at, repo: ctx.repo, branch: ctx.branch, path: j.path, size: j.item.file.size,
+        stage: j.stage || 'upload', status: j.httpStatus === undefined ? null : j.httpStatus,
+        error: j.error, log: j.log.slice(-60)
+      }));
+      await idbSet('gitpush_failures', add.concat(list).slice(0, 200));
+      const runs = (await idbGet('gitpush_fail_runs')) || {};
+      runs[batch] = {
+        at, lines: ctx.runLog.slice(-120),
+        env: [
+          'userAgent: ' + navigator.userAgent,
+          'online: ' + navigator.onLine,
+          'scope token: ' + (Array.isArray(ctx.scopes) ? ctx.scopes.join(', ') : '(tidak terbaca)'),
+          'paralel: ' + UPLOAD_CONCURRENCY,
+          'file di run ini: ' + jobs.length + ', gagal: ' + failed.length
+        ]
+      };
+      const keys = Object.keys(runs);
+      while(keys.length > 15) delete runs[keys.shift()];
+      await idbSet('gitpush_fail_runs', runs);
+      renderFailures();
+    }catch(e){ console.error('[gitpush] gagal menyimpan riwayat gagal', e); }
+  }
+
+  async function renderFailures(){
+    if(!failLog) return;
+    const list = (await idbGet('gitpush_failures')) || [];
+    _failCache = list;
+    if(!list.length){
+      failLog.innerHTML = '<div class="log-empty">Belum ada kegagalan tercatat.</div>';
+      return;
+    }
+    failLog.innerHTML = `<div class="fail-actions"><span id="failCopyAll">Salin semua log</span><span id="failClear">Hapus semua</span></div>` +
+      list.slice(0, 100).map((h, i) => `
+        <div class="fail-row">
+          <div class="fail-head" data-i="${i}">
+            <span class="log-icon err">✕</span>
+            <div class="log-main">
+              <div class="log-file" title="${esc(h.path)}">${pathHTML(h.path)}</div>
+              <div class="hist-meta">${esc(h.repo)} · ${esc(h.branch)} · ${esc(STAGE_LABEL[h.stage] || h.stage)}${h.status !== null && h.status !== undefined ? ' · HTTP ' + h.status : ''} · ${fmtSize(h.size)} · ${new Date(h.at).toLocaleString('id-ID')}</div>
+              <div class="fail-err">${esc(h.error)}</div>
+              <div class="fail-toggle">▸ lihat log konsol</div>
+            </div>
+          </div>
+          <div class="fail-detail" id="fail-detail-${i}" style="display:none;">
+            <pre class="fail-pre"></pre>
+            <div class="fail-actions" style="padding:0;"><span class="fail-copy" data-i="${i}">Salin log ini</span></div>
+          </div>
+        </div>`).join('');
+  }
+
+  if(failLog){
+    failLog.addEventListener('click', async e => {
+      const t = e.target;
+      try{
+        if(t.id === 'failClear'){
+          await idbSet('gitpush_failures', []);
+          await idbSet('gitpush_fail_runs', {});
+          renderFailures();
+          return;
+        }
+        if(t.id === 'failCopyAll'){
+          const runs = (await idbGet('gitpush_fail_runs')) || {};
+          const text = _failCache.map(h => buildFailReport(h, runs[h.batch])).join('\n\n==========\n\n');
+          await navigator.clipboard.writeText(text);
+          toast('Semua log gagal disalin');
+          return;
+        }
+        if(t.classList.contains('fail-copy')){
+          const h = _failCache[+t.dataset.i];
+          const runs = (await idbGet('gitpush_fail_runs')) || {};
+          await navigator.clipboard.writeText(buildFailReport(h, runs[h.batch]));
+          toast('Log disalin');
+          return;
+        }
+        const head = t.closest('.fail-head');
+        if(head){
+          const i = +head.dataset.i;
+          const box = document.getElementById('fail-detail-' + i);
+          const open = box.style.display === 'none';
+          box.style.display = open ? 'block' : 'none';
+          head.querySelector('.fail-toggle').textContent = open ? '▾ sembunyikan log' : '▸ lihat log konsol';
+          if(open){
+            const pre = box.querySelector('pre');
+            if(!pre.textContent){
+              const runs = (await idbGet('gitpush_fail_runs')) || {};
+              pre.textContent = buildFailReport(_failCache[i], runs[_failCache[i].batch]);
+            }
+          }
+        }
+      }catch(err){ toast('Gagal: ' + err.message, true); }
+    });
+    renderFailures().catch(() => {});
   }
 
   uploadBtn.addEventListener('click', async () => {
@@ -3934,6 +4145,10 @@
     _uploading = true;
     uploadBtn.disabled = true;
     const setBtn = t => { uploadBtn.textContent = t; };
+    const runLog = [];
+    const rlog = m => { runLog.push(tsNow() + ' ' + m); if(runLog.length > 300) runLog.shift(); console.log('[gitpush]', m); };
+    _runLog = rlog;
+    let runScopes = null;
     setBtn('Menyiapkan…');
 
     // ---- Susun job (1 job per file) ----
@@ -3945,7 +4160,7 @@
       const path = folder ? `${folder}/${rel}` : rel;
       const row = addLogRow('pending', path, 'antre…');
       const job = {
-        item, path, status: 'pending', error: null, blobSha: null, existed: null,
+        item, path, status: 'pending', error: null, blobSha: null, existed: null, log: [], stage: null, httpStatus: null,
         row, fill: row.querySelector('.progress-fill'),
         metaEl: row.querySelector('.log-meta'), iconEl: row.querySelector('.log-icon')
       };
@@ -3960,15 +4175,18 @@
       jobs.push(job);
     }
 
+    rlog(`mulai: ${jobs.length} file, total ${fmtSize(jobs.reduce((n, j) => n + j.item.file.size, 0))}, repo=${repoFull}, branch=${branch}, folder=${folder || '(root)'}, paralel=${UPLOAD_CONCURRENCY}`);
     try{
       // ---- Pra-cek: ukuran & scope workflow ----
       const scopes = await getTokenScopes();
       const lacksWorkflow = Array.isArray(scopes) && !scopes.includes('workflow');
+      runScopes = scopes;
+      rlog('scope token: ' + (Array.isArray(scopes) ? (scopes.join(', ') || '(kosong)') : '(tidak terbaca — fine-grained token atau header tidak terekspos)'));
       for(const job of jobs){
-        if(job.item.file.size > MAX_FILE_BYTES){
-          failJob(job, `Ukuran ${fmtSize(job.item.file.size)} melebihi batas 100 MB GitHub`);
+        if(job.item.file.size > SIZE_MAX_BYTES){
+          failJob(job, `Ukuran ${fmtSize(job.item.file.size)} melebihi batas GitHub 100 MB (batas hard-block). Pakai Git LFS atau hapus dari daftar.`, 'preflight');
         }else if(lacksWorkflow && WORKFLOW_RE.test(job.path)){
-          failJob(job, WORKFLOW_MSG);
+          failJob(job, WORKFLOW_MSG, 'preflight');
         }
       }
       let live = jobs.filter(j => j.status === 'pending');
@@ -3991,6 +4209,7 @@
       }
 
       let head = live.length ? await getHead() : null;
+      rlog(head ? (head.empty ? 'repo kosong (belum ada commit)' : `HEAD ${head.sha.slice(0, 7)}, tree ${head.treeSha.slice(0, 7)}`) : 'tidak ada file untuk dikirim');
 
       // Repo kosong: Git Data API menolak (409). Docs GitHub: inisialisasi dulu lewat PUT /contents.
       if(head && head.empty){
@@ -4016,6 +4235,7 @@
           const t = await r.json();
           existing = new Map(t.tree.filter(x => x.type === 'blob').map(x => [x.path, x.sha]));
           if(t.truncated) existing._truncated = true;
+          rlog(`tree lama: ${existing.size} file${t.truncated ? ' (terpotong, daftar tidak lengkap)' : ''}`);
         }catch{ existing = null; }
       }
 
@@ -4029,6 +4249,7 @@
         setJob(job, 'membaca file…', 10);
         const buf = await job.item.file.arrayBuffer();
         const localSha = await gitBlobSha(buf);
+        jlog(job, `mulai: ${fmtSize(buf.byteLength)}, sha lokal=${localSha || '(dilewati, file besar)'}`);
         if(localSha && existing && existing.get(job.path) === localSha){
           job.blobSha = localSha;
           job.status = 'unchanged';
@@ -4045,6 +4266,7 @@
             body: JSON.stringify({ content, encoding: 'base64' })
           }, {
             timeoutMs,
+            log: m => jlog(job, m),
             onRetry: (a, n, w, m) => setJob(job, `retry ${a}/${n} dalam ${Math.ceil(w / 1000)} dtk · ${m}`, 45, 'warn')
           });
           const data = await res.json();
@@ -4062,6 +4284,7 @@
       const limits = [UPLOAD_CONCURRENCY, 5, 2];
       for(let round = 0; round < limits.length && pending.length; round++){
         if(round > 0){
+          rlog(`putaran ${round + 1}: ${pending.length} file diulang, paralel ${limits[round]}`);
           setBtn(`Mengulang ${pending.length} file gagal (putaran ${round + 1}/${limits.length})…`);
           await sleep(2500 * round);
         }
@@ -4073,7 +4296,9 @@
           }catch(err){
             const final = round === limits.length - 1 || err.permanent;
             job.lastErr = err;
-            if(final){ failJob(job, err.message); bump(); }
+            job.httpStatus = err.status === undefined ? null : err.status;
+            jlog(job, `gagal di putaran ${round + 1}: ${err.message}${err.permanent ? ' (permanen)' : ''}`);
+            if(final){ failJob(job, err.message, 'upload', job.httpStatus); bump(); }
             else{ setJob(job, `gagal: ${err.message} — akan diulang`, 100, 'warn'); failedNow.push(job); }
           }
         });
@@ -4123,6 +4348,7 @@
       let commitInfo = null;
       if(toCommit.length){
         setBtn(`Membuat commit (${toCommit.length} file)…`);
+        rlog(`membuat commit untuk ${toCommit.length} file (${fmtSize(toCommit.reduce((n, j) => n + j.item.file.size, 0))})`);
         try{
           commitInfo = await commitAll(toCommit);
         }catch(err){
@@ -4133,14 +4359,14 @@
             const rest = toCommit.filter(j => !WORKFLOW_RE.test(j.path));
             try{
               commitInfo = rest.length ? await commitAll(rest) : null;
-              wf.forEach(j => failJob(j, `${WORKFLOW_MSG} (GitHub: ${err.message})`));
+              wf.forEach(j => failJob(j, `${WORKFLOW_MSG} (GitHub: ${err.message})`, 'commit', err.status));
               toCommit = rest;
             }catch(err2){
-              toCommit.forEach(j => failJob(j, 'Commit gagal: ' + err2.message));
+              toCommit.forEach(j => failJob(j, 'Commit gagal: ' + err2.message, 'commit', err2.status));
               toCommit = [];
             }
           }else{
-            toCommit.forEach(j => failJob(j, 'Commit gagal: ' + err.message));
+            toCommit.forEach(j => failJob(j, 'Commit gagal: ' + err.message, 'commit', err.status));
             toCommit = [];
           }
         }
@@ -4157,12 +4383,13 @@
             const m = new Map(t.tree.map(x => [x.path, x.sha]));
             for(const j of toCommit){
               if(m.get(j.path) === j.blobSha) j.status = 'committed';
-              else failJob(j, 'Tidak terverifikasi di GitHub setelah commit (path/sha berbeda)');
+              else failJob(j, 'Tidak terverifikasi di GitHub setelah commit (path/sha berbeda)', 'verifikasi');
             }
             verified = true;
           }
         }catch{}
         if(!verified) toCommit.forEach(j => { j.status = 'committed'; });
+        rlog(verified ? 'verifikasi tree: semua file cocok' : 'verifikasi dilewati (tree terpotong / gagal dibaca)');
       }
 
       // ---- Tampilkan hasil per file ----
@@ -4172,7 +4399,7 @@
         const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${encodePath(branch)}/${encodePath(job.path)}`;
         const blobUrl = `https://github.com/${owner}/${repo}/blob/${encodePath(branch)}/${encodePath(job.path)}`;
         const label = job.note || (job.existed === true ? 'diperbarui' : job.existed === false ? 'dibuat' : 'terkirim');
-        job.metaEl.innerHTML = `${label} · terverifikasi · <a class="log-link" href="${esc(blobUrl)}" target="_blank" rel="noopener">lihat →</a><span class="log-actions"><span class="log-act" data-url="${esc(rawUrl)}">copy raw URL</span><span class="log-act" data-url="${esc(blobUrl)}">copy blob URL</span></span>`;
+        job.metaEl.innerHTML = `${label} · ${fmtSize(job.item.file.size)} · terverifikasi · <a class="log-link" href="${esc(blobUrl)}" target="_blank" rel="noopener">lihat →</a><span class="log-actions"><span class="log-act" data-url="${esc(rawUrl)}">copy raw URL</span><span class="log-act" data-url="${esc(blobUrl)}">copy blob URL</span></span>`;
         job.metaEl.querySelectorAll('.log-act').forEach(act => {
           act.addEventListener('click', async () => {
             try{
@@ -4194,12 +4421,14 @@
       })));
 
       // File gagal tetap di daftar (dengan alasannya) supaya tinggal klik Push lagi
+      await saveFailures(jobs, { repo: repoFull, branch, runLog, scopes: runScopes });
       failedJobs.forEach(j => { j.item.error = j.error; j.item.skip = false; });
       selectedFiles = failedJobs.map(j => j.item);
       renderFileList();
       renderZipTree();
 
-      let summary = `✓ ${okCount} terkirim`;
+      const sentBytes = jobs.filter(j => j.status === 'committed').reduce((n, j) => n + j.item.file.size, 0);
+      let summary = `✓ ${okCount} terkirim (${fmtSize(sentBytes)})`;
       if(sameCount) summary += `, ${sameCount} tidak berubah`;
       if(skippedCount) summary += `, ${skippedCount} di-skip`;
       if(failedJobs.length) summary += ` · ✕ ${failedJobs.length} gagal (masih di daftar, klik Push untuk ulangi)`;
@@ -4209,13 +4438,16 @@
         browsePath(repoFull, folder || '');
       }
     }catch(err){
-      jobs.forEach(j => { if(j.status === 'pending' || j.status === 'uploaded') failJob(j, err.message); });
+      rlog('proses dihentikan: ' + err.message);
+      jobs.forEach(j => { if(j.status === 'pending' || j.status === 'uploaded') failJob(j, err.message, 'umum', err.status); });
+      await saveFailures(jobs, { repo: repoFull, branch, runLog, scopes: runScopes });
       jobs.filter(j => j.status === 'failed').forEach(j => { j.item.error = j.error; });
       selectedFiles = jobs.filter(j => j.status === 'failed').map(j => j.item);
       renderFileList();
       renderZipTree();
       toast('Upload dihentikan: ' + err.message, true);
     }finally{
+      _runLog = null;
       _uploading = false;
       uploadBtn.disabled = false;
       uploadBtn.textContent = '↑ Push ke GitHub';
