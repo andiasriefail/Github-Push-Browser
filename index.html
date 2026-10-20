@@ -699,6 +699,15 @@
   .pbase{ color:var(--text); font-weight:600; }
   .tree-row.skipped .pbase{ color:var(--text-dimmer); }
   .ferr{ display:block; color:var(--red); font-size:10.5px; margin-top:2px; }
+  /* --- Popup loading saat membaca folder / zip --- */
+  #loadingOverlay{ position:fixed; inset:0; z-index:9999; display:none; align-items:center; justify-content:center; background:rgba(1,4,9,.8); padding:20px; }
+  #loadingOverlay.show{ display:flex; }
+  .lo-box{ width:100%; max-width:420px; background:var(--bg-raised); border:1px solid var(--border-bright); border-radius:12px; padding:22px 18px; text-align:center; font-family:var(--mono); }
+  .lo-spinner{ width:34px; height:34px; margin:0 auto 14px; border:3px solid var(--border-bright); border-top-color:var(--green); border-radius:50%; animation:lospin .8s linear infinite; }
+  @keyframes lospin{ to{ transform:rotate(360deg); } }
+  .lo-title{ font-size:13px; color:var(--text); font-weight:600; margin-bottom:10px; overflow-wrap:anywhere; }
+  .lo-path{ font-size:11.5px; color:var(--text-dim); min-height:16px; overflow-wrap:anywhere; word-break:break-word; max-height:90px; overflow:hidden; }
+  .lo-count{ font-size:11px; color:var(--green-bright); margin-top:8px; }
 </style>
 </head>
 <body>
@@ -1120,6 +1129,15 @@
 </div>
 
 <!-- New Folder Modal -->
+<div id="loadingOverlay" role="status" aria-live="polite">
+  <div class="lo-box">
+    <div class="lo-spinner"></div>
+    <div class="lo-title" id="loTitle">Memproses…</div>
+    <div class="lo-path" id="loPath"></div>
+    <div class="lo-count" id="loCount"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="newFolderModal">
   <div class="modal">
     <div class="modal-title">📁 Buat Folder Baru</div>
@@ -3366,6 +3384,41 @@
     return `<span class="pdir">${esc(p.slice(0, i + 1))}</span><span class="pbase">${esc(p.slice(i + 1))}</span>`;
   }
 
+  // ---------------- Popup loading (spinner + path file yang sedang diproses) ----------------
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  const loTitle = document.getElementById('loTitle');
+  const loPath = document.getElementById('loPath');
+  const loCount = document.getElementById('loCount');
+  let _loDepth = 0;
+  let _lastYield = 0;
+  function showLoading(title){
+    _loDepth++;
+    loTitle.textContent = title;
+    loPath.textContent = '';
+    loCount.textContent = '';
+    loadingOverlay.classList.add('show');
+  }
+  function updateLoading(path, count){
+    if(path != null) loPath.textContent = path;
+    if(count != null) loCount.textContent = count;
+  }
+  function hideLoading(){
+    _loDepth = Math.max(0, _loDepth - 1);
+    if(_loDepth === 0) loadingOverlay.classList.remove('show');
+  }
+  // Beri kesempatan browser menggambar ulang supaya popup tidak terlihat beku
+  async function yieldUI(){
+    const now = performance.now();
+    if(now - _lastYield < 50) return;
+    await new Promise(r => {
+      let done = false;
+      const fin = () => { if(!done){ done = true; r(); } };
+      requestAnimationFrame(() => setTimeout(fin, 0));
+      setTimeout(fin, 100); // cadangan: rAF berhenti kalau tab di latar belakang
+    });
+    _lastYield = performance.now();
+  }
+
   // Buang nama folder induk (yang dipilih/di-drag) dari path, jadi ISI folder
   // langsung masuk ke root/folder tujuan, sama seperti zip tanpa folder pembungkus.
   function stripRootFolder(list, rootName){
@@ -3419,6 +3472,8 @@
     if(entry.isFile){
       const file = await new Promise((res, rej) => entry.file(res, rej));
       out.push({ file, relPath: prefix + entry.name, fromFolder: prefix !== '' });
+      updateLoading(prefix + entry.name, out.length + ' file dibaca');
+      await yieldUI();
     }else if(entry.isDirectory){
       const reader = entry.createReader();
       let batch;
@@ -3431,6 +3486,7 @@
   }
 
   async function handleDropped(entries, plainFiles){
+    showLoading('Membaca folder…');
     try{
       let list = [];
       if(entries.length){
@@ -3450,6 +3506,8 @@
       await addItems(list);
     }catch(err){
       toast('Gagal membaca folder: ' + err.message, true);
+    }finally{
+      hideLoading();
     }
   }
 
@@ -3458,7 +3516,14 @@
   // satu per satu TIDAK di-skip diam-diam (jadi .env / .gitignore yang sengaja
   // dipilih tetap masuk).
   async function addItems(list){
+    showLoading('Menyiapkan file…');
+    try{ await addItemsInner(list); }
+    finally{ hideLoading(); }
+  }
+  async function addItemsInner(list){
+    let n = 0;
     for(const it of list){
+      if(++n % 25 === 0){ updateLoading(it.relPath, n + ' / ' + list.length); await yieldUI(); }
       if(it.file.name.toLowerCase().endsWith('.zip') && !it.fromFolder){
         await extractZip(it.file);
         continue;
@@ -3468,15 +3533,14 @@
       const auto = !!it.fromFolder;
       selectedFiles.push({ file: it.file, relPath: rel, fromZip: false, fromFolder: auto, skip: auto && isIgnored(rel), error: null });
     }
+    updateLoading('Menampilkan daftar file…', selectedFiles.length + ' file');
+    await yieldUI();
     renderFileList();
     renderZipTree();
   }
 
   async function extractZip(zipFile){
-    const statusRow = document.createElement('div');
-    statusRow.className = 'zip-status';
-    statusRow.innerHTML = `<span class="pulse"></span> Mengekstrak ${esc(zipFile.name)}…`;
-    fileList.appendChild(statusRow);
+    showLoading('Mengekstrak ' + zipFile.name);
     try{
       const zip = await JSZip.loadAsync(zipFile);
       const entries = Object.values(zip.files).filter(e => !e.dir);
@@ -3487,6 +3551,8 @@
         const base = rel.split('/').pop();
         // Hanya buang sampah metadata macOS; dotfile biasa (.github, .env, .gitignore) tetap dibaca.
         if(rel.includes('__MACOSX/') || base === '.DS_Store' || base.startsWith('._')) continue;
+        updateLoading(rel, (count + 1) + ' / ' + entries.length);
+        await yieldUI();
         const blob = await entry.async('blob');
         const asFile = new File([blob], base, { type: blob.type || 'application/octet-stream' });
         selectedFiles.push({ file: asFile, relPath: rel, fromZip: true, fromFolder: false, skip: isIgnored(rel), error: null });
@@ -3496,7 +3562,7 @@
     }catch(err){
       toast('Gagal membaca ZIP: ' + err.message, true);
     }finally{
-      statusRow.remove();
+      hideLoading();
     }
   }
 
@@ -3659,8 +3725,8 @@
   //
   // Alur (pakai Git Data API, bukan 1 PUT per file):
   //   1. Cek branch + ambil tree lama (file yang isinya sudah sama di-skip, hemat kuota)
-  //   2. Upload tiap file sebagai blob — PARALEL maks 5, "lazy load balance":
-  //      5 worker, tiap worker yang kosong langsung menarik file berikutnya
+  //   2. Upload tiap file sebagai blob — PARALEL maks 10, "lazy load balance":
+  //      10 worker, tiap worker yang kosong langsung menarik file berikutnya
   //      (file terbesar didahulukan) jadi tidak ada worker yang menganggur.
   //   3. Semua blob digabung jadi SATU commit (atomik, tidak ada bentrok sha / 409 antar file)
   //   4. Verifikasi: tree commit dibaca ulang dan dicocokkan dengan sha tiap file
@@ -3672,7 +3738,7 @@
   //   a) per request: exponential backoff + jitter, timeout (AbortController)
   //   b) rate limit (403/429, retry-after / x-ratelimit-reset): SEMUA worker ikut menunggu
   //   c) integritas: sha1 lokal dibandingkan dengan sha balikan GitHub, beda -> upload ulang
-  //   d) putaran ulang file gagal dengan concurrency diturunkan 5 -> 3 -> 1
+  //   d) putaran ulang file gagal dengan concurrency diturunkan 10 -> 5 -> 2
   //   e) commit/ref bentrok (ada yang push di sela) -> ambil HEAD baru, bangun ulang commit
   //   f) verifikasi akhir; file yang tidak terverifikasi ditandai gagal
   //   g) file gagal tetap ada di daftar, tinggal klik Push lagi
@@ -3686,7 +3752,7 @@
     });
   }
 
-  const UPLOAD_CONCURRENCY = 5;
+  const UPLOAD_CONCURRENCY = 10;
   const MAX_FILE_BYTES = 100 * 1024 * 1024;
   const WORKFLOW_RE = /^\.github\/workflows\//i;
   const WORKFLOW_MSG = 'Token tidak punya izin "workflow", jadi GitHub menolak file di .github/workflows/. Buat token baru dengan scope repo + workflow (fine-grained: Contents & Workflows = Read and write), lalu login ulang.';
@@ -3993,7 +4059,7 @@
       }
 
       let pending = live.slice().sort((a, b) => b.item.file.size - a.item.file.size); // terbesar dulu
-      const limits = [UPLOAD_CONCURRENCY, 3, 1];
+      const limits = [UPLOAD_CONCURRENCY, 5, 2];
       for(let round = 0; round < limits.length && pending.length; round++){
         if(round > 0){
           setBtn(`Mengulang ${pending.length} file gagal (putaran ${round + 1}/${limits.length})…`);
