@@ -3366,6 +3366,16 @@
     return `<span class="pdir">${esc(p.slice(0, i + 1))}</span><span class="pbase">${esc(p.slice(i + 1))}</span>`;
   }
 
+  // Buang nama folder induk (yang dipilih/di-drag) dari path, jadi ISI folder
+  // langsung masuk ke root/folder tujuan, sama seperti zip tanpa folder pembungkus.
+  function stripRootFolder(list, rootName){
+    const pre = rootName + '/';
+    return list.map(it => {
+      const rel = normRel(it.relPath);
+      return { ...it, relPath: rel.startsWith(pre) ? rel.slice(pre.length) : rel, fromFolder: true };
+    });
+  }
+
   // ---------------- File selection ----------------
   const folderInput = document.getElementById('folderInput');
   const folderPickBtn = document.getElementById('folderPickBtn');
@@ -3397,8 +3407,10 @@
   });
   folderPickBtn.addEventListener('click', e => { e.stopPropagation(); folderInput.click(); });
   folderInput.addEventListener('change', () => {
-    const list = Array.from(folderInput.files).map(f => ({ file: f, relPath: f.webkitRelativePath || f.name, fromFolder: true }));
+    let list = Array.from(folderInput.files).map(f => ({ file: f, relPath: f.webkitRelativePath || f.name, fromFolder: true }));
     folderInput.value = '';
+    const roots = new Set(list.map(it => normRel(it.relPath).split('/')[0]));
+    if(roots.size === 1) list = stripRootFolder(list, [...roots][0]);
     addItems(list);
   });
 
@@ -3422,7 +3434,16 @@
     try{
       let list = [];
       if(entries.length){
-        for(const en of entries) await walkEntry(en, '', list);
+        for(const en of entries){
+          if(en.isDirectory && entries.length === 1){
+            // satu folder di-drag: isinya langsung masuk root (tanpa nama folder induk)
+            const sub = [];
+            await walkEntry(en, '', sub);
+            list = list.concat(stripRootFolder(sub, en.name));
+          }else{
+            await walkEntry(en, '', list);
+          }
+        }
       }else{
         list = plainFiles.map(f => ({ file: f, relPath: f.name }));
       }
